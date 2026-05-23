@@ -596,6 +596,36 @@ def close_surfshark_browser():
 
 atexit.register(close_surfshark_browser)
 
+def _get_surfshark_page_sync():
+    global surfshark_page
+    context = get_surfshark_context()
+    page = surfshark_page
+    if page is not None:
+        try:
+            if page.is_closed():
+                page = None
+        except Exception:
+            page = None
+    if page is None:
+        page = context.new_page()
+        surfshark_page = page
+    return page
+
+def warm_surfshark_browser():
+    try:
+        def _warm():
+            page = _get_surfshark_page_sync()
+            try:
+                page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=15000)
+            except Exception as e:
+                print(f"[*] Surfshark warm page navigation failed: {e}")
+        if threading.current_thread().name.startswith("surfshark-playwright"):
+            _warm()
+        else:
+            surfshark_executor.submit(_warm)
+    except Exception as e:
+        print(f"[*] Surfshark warm startup failed: {e}")
+
 # ── Canva Helpers ────────────────────────────────────────────────
 def normalize_email(raw):
     email = (raw or "").strip().split()[0] if raw else ""
@@ -1143,11 +1173,9 @@ def _submit_surfshark_code_sync(code):
                           "--disable-blink-features=AutomationControlled"],
                 )
 
-        close_context = True
         if getattr(surfshark_browser, "contexts", None):
             context = surfshark_browser.contexts[0]
             surfshark_context = context
-            close_context = False
             if storage_state and storage_state.get("cookies"):
                 try:
                     context.add_cookies(storage_state["cookies"])
@@ -1155,26 +1183,14 @@ def _submit_surfshark_code_sync(code):
                     print(f"[*] Warning: Could not add Surfshark cookies to CDP context: {cookie_err}")
         elif surfshark_context is not None:
             context = surfshark_context
-            close_context = False
         else:
             context = surfshark_browser.new_context(storage_state=storage_state)
             surfshark_context = context
-            close_context = False
             context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         context.route("**/*", block_heavy_surfshark_assets)
         timings["browser"] = time.monotonic() - started
 
-        page = surfshark_page
-        if page is not None:
-            try:
-                if page.is_closed():
-                    page = None
-            except Exception:
-                page = None
-        if page is None:
-            page = context.new_page()
-            surfshark_page = page
-        keep_page_open = False
+        page = _get_surfshark_page_sync()
         try:
             step_started = time.monotonic()
             page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=15000)
@@ -1222,7 +1238,6 @@ def _submit_surfshark_code_sync(code):
             while time.monotonic() < deadline:
                 if "login-code/success" in page.url or "login-code" not in page.url:
                     timings["confirm"] = time.monotonic() - step_started
-                    keep_page_open = True
                     try:
                         page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=8000)
                     except Exception:
@@ -1255,16 +1270,9 @@ def _submit_surfshark_code_sync(code):
                 f"<code>{short_error(e)}</code>"
             ), timings
         finally:
-            if not keep_page_open:
-                try:
-                    page.close()
-                except Exception:
-                    pass
-                if surfshark_page is page:
-                    surfshark_page = None
             try:
-                if close_context:
-                    context.close()
+                if page and not page.is_closed() and SURFSHARK_CODE_URL not in (page.url or ""):
+                    page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=8000)
             except Exception:
                 pass
 
@@ -3477,5 +3485,7 @@ if __name__ == "__main__":
     print("[*] Bot starting...")
     print(f"[+] Token: {TOKEN[:20]}...")
     print(f"[+] Admins loaded: {ADMIN_IDS}")
+    print("[*] Warming Surfshark browser...")
+    warm_surfshark_browser()
     bot.remove_webhook()
     bot.infinity_polling(skip_pending=True)
