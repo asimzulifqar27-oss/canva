@@ -7,6 +7,7 @@ import os
 import threading
 import html
 import atexit
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
@@ -36,6 +37,7 @@ SURFSHARK_CODE_RE = re.compile(r"^([A-Za-z0-9]{6})$")
 SURFSHARK_EMOJI_ID = "5879507561878654934"
 DUOLINGO_EMOJI_ID = "5796371348808799072"
 surfshark_lock = threading.Lock()
+surfshark_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="surfshark-playwright")
 surfshark_playwright = None
 surfshark_browser = None
 surfshark_context = None
@@ -555,7 +557,7 @@ def get_surfshark_context():
     surfshark_context.route("**/*", block_heavy_surfshark_assets)
     return surfshark_context
 
-def close_surfshark_browser():
+def _close_surfshark_browser_sync():
     global surfshark_playwright, surfshark_browser, surfshark_context
     for obj in (surfshark_context, surfshark_browser, surfshark_playwright):
         if obj:
@@ -564,6 +566,15 @@ def close_surfshark_browser():
             except Exception:
                 pass
     surfshark_context = surfshark_browser = surfshark_playwright = None
+
+def close_surfshark_browser():
+    try:
+        if threading.current_thread().name.startswith("surfshark-playwright"):
+            _close_surfshark_browser_sync()
+        else:
+            surfshark_executor.submit(_close_surfshark_browser_sync).result(timeout=15)
+    except Exception:
+        pass
 
 atexit.register(close_surfshark_browser)
 
@@ -1078,7 +1089,7 @@ def get_surfshark_storage_state():
             pass
     raise RuntimeError("No active Surfshark cookies in DB and storage_state.json not found.")
 
-def submit_surfshark_code(code):
+def _submit_surfshark_code_sync(code):
     timings = {}
     started = time.monotonic()
     with surfshark_lock:
@@ -1178,6 +1189,11 @@ def submit_surfshark_code(code):
                 context.close()
             except Exception:
                 pass
+
+def submit_surfshark_code(code):
+    if threading.current_thread().name.startswith("surfshark-playwright"):
+        return _submit_surfshark_code_sync(code)
+    return surfshark_executor.submit(_submit_surfshark_code_sync, code).result()
 
 def handle_surfshark_code(message, raw_text):
     cleaned = raw_text.strip()
