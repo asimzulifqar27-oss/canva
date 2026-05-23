@@ -698,6 +698,15 @@ def format_duolingo_account(account):
         "🎉 Enjoy your account!"
     )
 
+def duolingo_support_only_text():
+    duolingo_icon = f'<tg-emoji emoji-id="{DUOLINGO_EMOJI_ID}">🔫</tg-emoji>'
+    return (
+        f"{duolingo_icon} *Duolingo Access*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Duolingo is currently available *only via support*.\n\n"
+        "💬 Contact: @siddheshsaga\\_bot"
+    )
+
 _SAMESITE_MAP = {
     "no_restriction": "None", "unspecified": "Lax", "lax": "Lax",
     "strict": "Strict", "none": "None",
@@ -1329,8 +1338,8 @@ def welcome_text():
         "👑✨ *SIDD SAGA BOT* ✨👑\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "👋 Welcome to your *premium access hub!*\n\n"
-        "👨‍💻 *Owner:* @siddsaga\n"
-        "🛠 *Developer:* @AsimVirus\n\n"
+        "👨‍💻 *Owner:* @siddsad29\n"
+        "🛠 *Developer:* @Asimvirus\n\n"
         "💼 *Canva Business* — Instant team invite\n"
         "👑 *Canva Pro* — Manual activation\n"
         f"{surf_icon} *Surfshark VPN* — Auto login via code\n"
@@ -1344,8 +1353,8 @@ def join_required_text():
     return (
         "👑✨ *SIDD SAGA BOT* ✨👑\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "👨‍💻 *Owner:* @siddsaga\n"
-        "🛠 *Developer:* @AsimVirus\n\n"
+        "👨‍💻 *Owner:* @siddsad29\n"
+        "🛠 *Developer:* @Asimvirus\n\n"
         "🔒 Join our channel to unlock the bot.\n\n"
         "✅ Free Canva Business access\n"
         "✅ Private Canva Pro upgrades\n"
@@ -1557,8 +1566,8 @@ def callback_main_menu(call):
         bot.send_message(chat_id,
             "📞 *Support & Updates*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            "👨‍💻 *Owner:* @siddsaga\n"
-            "🛠 *Developer:* @AsimVirus\n"
+            "👨‍💻 *Owner:* @siddsad29\n"
+            "🛠 *Developer:* @Asimvirus\n"
             "🤖 *Support Bot:* @siddheshsaga\\_bot\n"
             "🌐 *Updates Channel:* @siddmethodsgiveway\n\n"
             "⚡ _We respond fast!_",
@@ -1593,8 +1602,7 @@ def callback_main_menu(call):
             )
         else:
             bot.send_message(chat_id,
-                "❌ *No Duolingo accounts available right now.*\n\n"
-                "Please check again later or contact support.",
+                duolingo_support_only_text(),
                 parse_mode="Markdown",
                 reply_markup=main_menu(user_id)
             )
@@ -1825,8 +1833,8 @@ def handle_text(message):
             message.chat.id,
             "📞 *Support & Updates*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            "👨‍💻 *Owner:* @siddsaga\n"
-            "🛠 *Developer:* @AsimVirus\n"
+            "👨‍💻 *Owner:* @siddsad29\n"
+            "🛠 *Developer:* @Asimvirus\n"
             "🤖 *Support Bot:* @siddheshsaga\\_bot\n"
             "🌐 *Updates Channel:* @siddmethodsgiveway\n\n"
             "⚡ _We respond fast!_",
@@ -1863,8 +1871,7 @@ def handle_text(message):
         else:
             bot.send_message(
                 message.chat.id,
-                "❌ *No Duolingo accounts available right now.*\n\n"
-                "Please check again later or contact support.",
+                duolingo_support_only_text(),
                 parse_mode="Markdown",
                 reply_markup=main_menu(user_id)
             )
@@ -2738,7 +2745,7 @@ def process_global_gift(message):
             try:
                 bot.send_message(
                     u['user_id'],
-                    f"🎁 *Surprise Gift from @siddsaga!*\n"
+                    f"🎁 *Surprise Gift from @siddsad29!*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"🎉 You received `{amount}` free credits!\n"
                     f"🚀 Enjoy your premium access!",
@@ -2991,7 +2998,7 @@ def process_surf_global_gift(message):
             try:
                 bot.send_message(
                     u['user_id'],
-                    f"🦈 *Surfshark Gift from @siddsaga!*\n"
+                    f"🦈 *Surfshark Gift from @siddsad29!*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
                     f"🎉 You got `{amount}` free Surfshark credits!\n"
                     f"🔑 Use them to login to Surfshark VPN!",
