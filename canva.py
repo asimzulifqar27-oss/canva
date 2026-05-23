@@ -46,6 +46,7 @@ surfshark_playwright = None
 surfshark_browser = None
 surfshark_context = None
 surfshark_page = None
+surfshark_using_cdp = False
 
 # ── Canva Auto-Invite Config ─────────────────────────────────────
 import json
@@ -578,12 +579,13 @@ def launch_surfshark_browser():
         return surfshark_playwright.chromium.launch(**launch_kwargs)
 
 def get_surfshark_context():
-    global surfshark_playwright, surfshark_browser, surfshark_context
+    global surfshark_playwright, surfshark_browser, surfshark_context, surfshark_using_cdp
     if surfshark_context is not None:
         return surfshark_context
     surfshark_playwright = sync_playwright().start()
     try:
         surfshark_browser = surfshark_playwright.chromium.connect_over_cdp(SURFSHARK_CDP_URL)
+        surfshark_using_cdp = True
         if surfshark_browser.contexts:
             surfshark_context = surfshark_browser.contexts[0]
         else:
@@ -597,6 +599,7 @@ def get_surfshark_context():
     if not Path(SURFSHARK_STORAGE).exists():
         raise RuntimeError("storage_state.json not found. Start Chrome on the Surfshark CDP port or run login.py first.")
     surfshark_browser = launch_surfshark_browser()
+    surfshark_using_cdp = False
     surfshark_context = surfshark_browser.new_context(storage_state=SURFSHARK_STORAGE)
     surfshark_context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     maybe_route_surfshark_context(surfshark_context)
@@ -1172,34 +1175,41 @@ def surfshark_security_check_text():
         "An admin needs to add a fresh Surfshark cookie or refresh the logged-in browser session."
     )
 
+SURFSHARK_CODE_INPUT_SELECTOR = 'input[type="tel"]:visible, input[inputmode="numeric"]:visible, input[maxlength="1"]:visible'
+
 def _submit_surfshark_code_sync(code):
     global surfshark_context, surfshark_page
     timings = {}
     started = time.monotonic()
     with surfshark_lock:
-        try:
-            storage_state, cookie_id = get_surfshark_storage_state()
-        except Exception as e:
-            return False, (
-                "🔒 <b>No active Surfshark session available.</b>\n\n"
-                f"<code>{short_error(e)}</code>"
-            ), timings
-
-        global surfshark_playwright, surfshark_browser
+        global surfshark_playwright, surfshark_browser, surfshark_using_cdp
         if surfshark_playwright is None:
             surfshark_playwright = sync_playwright().start()
         if surfshark_browser is None:
             try:
                 surfshark_browser = surfshark_playwright.chromium.connect_over_cdp(SURFSHARK_CDP_URL)
+                surfshark_using_cdp = True
                 print(f"[+] Connected to Surfshark Chrome instance over CDP: {SURFSHARK_CDP_URL}")
             except Exception as cdp_err:
                 print(f"[*] Surfshark CDP connection failed ({SURFSHARK_CDP_URL}): {cdp_err}")
                 surfshark_browser = launch_surfshark_browser()
+                surfshark_using_cdp = False
+
+        storage_state = {"cookies": [], "origins": []}
+        cookie_id = None
+        if not surfshark_using_cdp:
+            try:
+                storage_state, cookie_id = get_surfshark_storage_state()
+            except Exception as e:
+                return False, (
+                    "🔒 <b>No active Surfshark session available.</b>\n\n"
+                    f"<code>{short_error(e)}</code>"
+                ), timings
 
         if getattr(surfshark_browser, "contexts", None):
             context = surfshark_browser.contexts[0]
             surfshark_context = context
-            if storage_state and storage_state.get("cookies"):
+            if not surfshark_using_cdp and storage_state and storage_state.get("cookies"):
                 try:
                     context.add_cookies(storage_state["cookies"])
                 except Exception as cookie_err:
@@ -1216,7 +1226,13 @@ def _submit_surfshark_code_sync(code):
         page = _get_surfshark_page_sync()
         try:
             step_started = time.monotonic()
-            page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=15000)
+            inputs = page.locator(SURFSHARK_CODE_INPUT_SELECTOR)
+            try:
+                current_url = page.url or ""
+            except Exception:
+                current_url = ""
+            if "login-code" not in current_url:
+                page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=15000)
             if "log-in" in page.url and "login-code" not in page.url:
                 timings["page"] = time.monotonic() - step_started
                 if cookie_id:
@@ -1235,7 +1251,7 @@ def _submit_surfshark_code_sync(code):
                     mark_cookie_expired(cookie_id)
                 return False, surfshark_security_check_text(), timings
 
-            inputs = page.locator('input[type="tel"]:visible, input[inputmode="numeric"]:visible, input[maxlength="1"]:visible')
+            inputs = page.locator(SURFSHARK_CODE_INPUT_SELECTOR)
             try:
                 inputs.first.wait_for(state="visible", timeout=8000)
             except Exception:
