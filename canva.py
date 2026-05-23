@@ -28,7 +28,8 @@ ADMIN_IDS = set(OWNER_IDS)
 
 CHANNELS = ["@siddmethodsgiveway"]
 DB_PATH = os.getenv("CANVA_DB_PATH", os.path.join(BASE_DIR, "canva_bot (1).db"))
-DUOLINGO_ACCOUNTS_PATH = os.getenv("DUOLINGO_ACCOUNTS_PATH", os.path.join(BASE_DIR, "account.txt"))
+DUOLINGO_ACCOUNTS_PATH = os.getenv("DUOLINGO_ACCOUNTS_PATH", os.path.join(BASE_DIR, "accounts.txt"))
+DUOLINGO_LEGACY_ACCOUNTS_PATH = os.path.join(BASE_DIR, "account.txt")
 SURFSHARK_STORAGE = os.getenv("SURFSHARK_STORAGE_STATE", os.path.join(BASE_DIR, "storage_state.json"))
 SURFSHARK_CODE_URL = os.getenv("SURFSHARK_CODE_URL", "https://my.surfshark.com/account/login-code")
 SURFSHARK_CODE_RE = re.compile(r"^([A-Za-z0-9]{6})$")
@@ -49,7 +50,7 @@ COOLDOWNS = {"canva_business": 30, "canva_pro": 30, "surfshark": 20}
 SURFSHARK_CREDIT_COST = 2
 cooldown_hits = {}
 canva_lock = threading.Lock()
-duolingo_lock = threading.Lock()
+duolingo_lock = threading.RLock()
 canva_playwright = None
 canva_browser = None
 canva_context = None
@@ -597,12 +598,49 @@ def refund_credit(user_id, column="credits"):
         elif column == "surfshark_credits":
             update_surfshark_credits(user_id, 1)
 
+def count_duolingo_accounts(path=None):
+    target = path or DUOLINGO_ACCOUNTS_PATH
+    if not os.path.exists(target):
+        return 0
+    with duolingo_lock:
+        with open(target, "r", encoding="utf-8") as f:
+            return sum(1 for line in f if line.strip() and not line.strip().startswith("#"))
+
+def get_duolingo_stock():
+    primary_count = count_duolingo_accounts(DUOLINGO_ACCOUNTS_PATH)
+    legacy_count = 0
+    if os.path.abspath(DUOLINGO_LEGACY_ACCOUNTS_PATH) != os.path.abspath(DUOLINGO_ACCOUNTS_PATH):
+        legacy_count = count_duolingo_accounts(DUOLINGO_LEGACY_ACCOUNTS_PATH)
+    return {
+        "primary_path": DUOLINGO_ACCOUNTS_PATH,
+        "primary_count": primary_count,
+        "legacy_path": DUOLINGO_LEGACY_ACCOUNTS_PATH,
+        "legacy_count": legacy_count,
+        "total": primary_count + legacy_count,
+    }
+
+def format_duolingo_stock():
+    stock = get_duolingo_stock()
+    duolingo_icon = f'<tg-emoji emoji-id="{DUOLINGO_EMOJI_ID}">🔫</tg-emoji>'
+    return (
+        f"{duolingo_icon} *Duolingo Stock*\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 *Total Available:* `{stock['total']}`\n"
+        f"📄 *Primary File:* `{os.path.basename(stock['primary_path'])}` → `{stock['primary_count']}`\n"
+        f"📄 *Legacy File:* `{os.path.basename(stock['legacy_path'])}` → `{stock['legacy_count']}`"
+    )
+
 def pop_duolingo_account():
     with duolingo_lock:
-        if not os.path.exists(DUOLINGO_ACCOUNTS_PATH):
-            return None
+        account_path = DUOLINGO_ACCOUNTS_PATH
+        if not os.path.exists(account_path) or count_duolingo_accounts(account_path) == 0:
+            if os.path.abspath(DUOLINGO_LEGACY_ACCOUNTS_PATH) == os.path.abspath(account_path):
+                return None
+            if not os.path.exists(DUOLINGO_LEGACY_ACCOUNTS_PATH) or count_duolingo_accounts(DUOLINGO_LEGACY_ACCOUNTS_PATH) == 0:
+                return None
+            account_path = DUOLINGO_LEGACY_ACCOUNTS_PATH
 
-        with open(DUOLINGO_ACCOUNTS_PATH, "r", encoding="utf-8") as f:
+        with open(account_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
         account = None
@@ -617,7 +655,7 @@ def pop_duolingo_account():
         if account is None:
             return None
 
-        with open(DUOLINGO_ACCOUNTS_PATH, "w", encoding="utf-8") as f:
+        with open(account_path, "w", encoding="utf-8") as f:
             f.writelines(kept_lines)
         return account
 
@@ -1235,9 +1273,11 @@ def admin_menu():
     markup.row(KeyboardButton("🦈 Surf Global Gift"), KeyboardButton("📤 Export Users"), KeyboardButton("🍪 Update Cookies"))
     # Row 9: Surfshark Cookies Pool
     markup.row(KeyboardButton("➕ Add Surf Cookie"), KeyboardButton("📋 View Surf Cookies"), KeyboardButton("🗑 Delete Surf Cookie"))
-    # Row 10: Canva Management
+    # Row 10: Duolingo Stock
+    markup.row(KeyboardButton("📦 Duolingo Stock"))
+    # Row 11: Canva Management
     markup.row(KeyboardButton("🔄 Toggle Canva Mode"), KeyboardButton("🍪 Canva Cookies"), KeyboardButton("🔃 Refresh Canva"))
-    # Row 11: Back Button
+    # Row 12: Back Button
     markup.row(KeyboardButton("🔙 Back to Main"))
     return markup
 
@@ -1615,6 +1655,18 @@ def callback_main_menu(call):
             bot.send_message(chat_id, admin_panel_text(),
                              parse_mode="Markdown", reply_markup=admin_menu())
 
+@bot.message_handler(commands=['duostock', 'duolingo_stock'])
+def cmd_duolingo_stock(message):
+    if not is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "❌ *Only admins can check Duolingo stock.*", parse_mode="Markdown")
+        return
+    bot.send_message(
+        message.chat.id,
+        format_duolingo_stock(),
+        parse_mode="Markdown",
+        reply_markup=admin_menu()
+    )
+
 # ── Main message router ───────────────────────────────────────────
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
@@ -1638,6 +1690,8 @@ def handle_text(message):
         "🦈 Surf Global Gift", "📤 Export Users", "🍪 Update Cookies",
         # Surfshark cookies pool management
         "➕ Add Surf Cookie", "📋 View Surf Cookies", "🗑 Delete Surf Cookie",
+        # Duolingo stock
+        "📦 Duolingo Stock",
         # Canva management
         "🔄 Toggle Canva Mode", "🍪 Canva Cookies", "🔃 Refresh Canva",
     ]
@@ -2209,6 +2263,14 @@ def handle_text(message):
                 reply_markup=cancel_menu()
             )
             bot.register_next_step_handler(msg, process_delete_surf_cookie)
+
+        elif text == "📦 Duolingo Stock":
+            bot.send_message(
+                message.chat.id,
+                format_duolingo_stock(),
+                parse_mode="Markdown",
+                reply_markup=admin_menu()
+            )
 
         # ── Canva Management ──────────────────────────────────
         elif text == "🔄 Toggle Canva Mode":
