@@ -60,7 +60,7 @@ CANCEL_TEXTS = {"Cancel", "❌ Cancel"}
 MENU_BUTTONS = {
     "🔙 Back to Main", "🛒 Buy Premium / Panel", "👤 My Account",
     "🔗 Refer & Earn", "📞 Support", "💼 Canva Business", "👑 Canva Pro",
-    "❤️ Surfshark Login", "🦈 Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo", "⚙️ Admin Panel",
+    "Surfshark Login", "🦈 Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo", "⚙️ Admin Panel",
 }
 
 bot = telebot.TeleBot(TOKEN, threaded=False)
@@ -85,8 +85,7 @@ def premium_emoji_html(text):
             matched = False
             for emoji, emoji_id in PREMIUM_EMOJI_ITEMS:
                 if part.startswith(emoji, cursor):
-                    fallback_emoji = "❤️" if str(emoji_id) == SURFSHARK_EMOJI_ID else emoji
-                    converted.append(f'<tg-emoji emoji-id="{emoji_id}">{fallback_emoji}</tg-emoji>')
+                    converted.append(f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji>')
                     cursor += len(emoji)
                     matched = True
                     break
@@ -616,7 +615,7 @@ def refund_credit(user_id, column="credits"):
             update_surfshark_credits(user_id, 1)
 
 def surfshark_emoji_html():
-    return f'<tg-emoji emoji-id="{SURFSHARK_EMOJI_ID}">❤️</tg-emoji>'
+    return f'<tg-emoji emoji-id="{SURFSHARK_EMOJI_ID}">🦈</tg-emoji>'
 
 def count_duolingo_accounts(path=None):
     target = path or DUOLINGO_ACCOUNTS_PATH
@@ -1266,7 +1265,7 @@ def main_menu(user_id=None):
     else:
         markup.row(KeyboardButton("💼 Canva Business"))
     markup.row(
-        KeyboardButton("❤️ Surfshark Login", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
+        KeyboardButton("Surfshark Login", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
         KeyboardButton("Duolingo", icon_custom_emoji_id=DUOLINGO_EMOJI_ID)
     )
     markup.row(KeyboardButton("👤 My Account"), KeyboardButton("🔗 Refer & Earn"))
@@ -1284,7 +1283,7 @@ def admin_menu():
     # Row 3: Credits gifting
     markup.row(
         KeyboardButton("💰 Give Credits"),
-        KeyboardButton("❤️ Give Surf Credits", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
+        KeyboardButton("Give Surf Credits", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
         KeyboardButton("🎯 Set Credits")
     )
     # Row 4: Users search & details
@@ -1713,14 +1712,14 @@ def handle_text(message):
     known_commands = [
         "🔙 Back to Main", "🛒 Buy Premium / Panel", "👤 My Account",
         "🔗 Refer & Earn", "📞 Support", "💼 Canva Business", "👑 Canva Pro",
-        "Surfshark Login", "❤️ Surfshark Login", "🦈 Surfshark Login", "🏄‍♀️ Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo",
+        "Surfshark Login", "🦈 Surfshark Login", "🏄‍♀️ Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo",
         "➕ Add Link", "📋 View Links",
         "📢 Broadcast", "📊 Statistics",
         "💰 Give Credits", "🗑 Delete Link", "👤 User Info", "🎁 Global Gift",
         "🛠 Maintenance", "⚙️ Admin Panel", "✉️ Message User",
         "📂 Backup DB", "🔰 Leaderboard", "🏆 Leaderboard",
         # New admin features
-        "❤️ Give Surf Credits", "🦈 Give Surf Credits", "🎯 Set Credits", "👥 All Users",
+        "Give Surf Credits", "🦈 Give Surf Credits", "🎯 Set Credits", "👥 All Users",
         "🚫 Ban User", "✅ Unban User", "📋 Banned List",
         "👑 Pro Requests", "🔄 Reset User",
         "🦈 Surf Global Gift", "📤 Export Users", "🍪 Update Cookies",
@@ -1834,7 +1833,7 @@ def handle_text(message):
             parse_mode="Markdown"
         )
 
-    elif text in ["Surfshark Login", "❤️ Surfshark Login", "🦈 Surfshark Login", "🏄 Surfshark Login", "🏄‍♀️ Surfshark Login"]:
+    elif text in ["Surfshark Login", "🦈 Surfshark Login", "🏄 Surfshark Login", "🏄‍♀️ Surfshark Login"]:
         surf_icon = surfshark_emoji_html()
         user_credits = "∞" if is_admin(user_id) else (user['surfshark_credits'] if user else 0)
         bot.send_message(
@@ -2105,7 +2104,7 @@ def handle_text(message):
             bot.register_next_step_handler(msg, process_admin_message)
 
         # ── NEW: Give Surfshark Credits ─────────────────────────
-        elif text in ["❤️ Give Surf Credits", "🦈 Give Surf Credits", "Give Surf Credits"]:
+        elif text in ["Give Surf Credits", "🦈 Give Surf Credits"]:
             surf_icon = surfshark_emoji_html()
             msg = bot.send_message(
                 message.chat.id,
