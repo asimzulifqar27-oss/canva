@@ -60,7 +60,7 @@ CANCEL_TEXTS = {"Cancel", "❌ Cancel"}
 MENU_BUTTONS = {
     "🔙 Back to Main", "🛒 Buy Premium / Panel", "👤 My Account",
     "🔗 Refer & Earn", "📞 Support", "💼 Canva Business", "👑 Canva Pro",
-    "🦈 Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo", "⚙️ Admin Panel",
+    "❤️ Surfshark Login", "🦈 Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo", "⚙️ Admin Panel",
 }
 
 bot = telebot.TeleBot(TOKEN, threaded=False)
@@ -183,6 +183,10 @@ original_keyboard_btn_to_dict = KeyboardButton.to_dict
 def custom_keyboard_btn_init(self, text, *args, **kwargs):
     forced_icon_id = kwargs.pop('icon_custom_emoji_id', None)
     original_text = text
+    if forced_icon_id:
+        original_keyboard_btn_init(self, original_text, *args, **kwargs)
+        self._icon_custom_emoji_id = forced_icon_id
+        return
     matched_emoji = None
     matched_id = None
     for emoji, eid in PREMIUM_EMOJI_ITEMS:
@@ -1198,9 +1202,10 @@ def handle_surfshark_code(message, raw_text):
         return False
     user = get_user(message.from_user.id)
     if not is_admin(message.from_user.id) and (not user or user['surfshark_credits'] < SURFSHARK_CREDIT_COST):
+        surf_icon = surfshark_emoji_html()
         bot.send_message(
             message.chat.id,
-            "🦈 *Surfshark Locked*\n"
+            f"{surf_icon} *Surfshark Locked*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             f"🪙 You need *{SURFSHARK_CREDIT_COST} Surfshark credits* to use this.\n\n"
             "🔗 Invite a new user with your referral link to earn credits.\n"
@@ -1210,9 +1215,10 @@ def handle_surfshark_code(message, raw_text):
         )
         return True
     code = match.group(1).upper()
+    surf_icon = surfshark_emoji_html()
     status = bot.send_message(
         message.chat.id,
-        f"🦈 <b>Checking your Surfshark code...</b>\n\n<code>{code}</code>\n\n⏱ <i>Please wait...</i>"
+        f"{surf_icon} <b>Checking your Surfshark code...</b>\n\n<code>{code}</code>\n\n⏱ <i>Please wait...</i>"
     )
     update_surfshark_credits(message.from_user.id, -SURFSHARK_CREDIT_COST)
     started_at = time.monotonic()
@@ -1260,7 +1266,7 @@ def main_menu(user_id=None):
     else:
         markup.row(KeyboardButton("💼 Canva Business"))
     markup.row(
-        KeyboardButton("Surfshark Login", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
+        KeyboardButton("❤️ Surfshark Login", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
         KeyboardButton("Duolingo", icon_custom_emoji_id=DUOLINGO_EMOJI_ID)
     )
     markup.row(KeyboardButton("👤 My Account"), KeyboardButton("🔗 Refer & Earn"))
@@ -1278,7 +1284,7 @@ def admin_menu():
     # Row 3: Credits gifting
     markup.row(
         KeyboardButton("💰 Give Credits"),
-        KeyboardButton("Give Surf Credits", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
+        KeyboardButton("❤️ Give Surf Credits", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
         KeyboardButton("🎯 Set Credits")
     )
     # Row 4: Users search & details
@@ -1291,7 +1297,7 @@ def admin_menu():
     markup.row(KeyboardButton("🛠 Maintenance"), KeyboardButton("📂 Backup DB"))
     # Row 8: Surfshark & Exports
     markup.row(
-        KeyboardButton("Surf Global Gift", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
+        KeyboardButton("🦈 Surf Global Gift"),
         KeyboardButton("📤 Export Users"),
         KeyboardButton("🍪 Update Cookies")
     )
@@ -1319,6 +1325,7 @@ def join_channels_markup():
 
 # ── Text Templates ────────────────────────────────────────────────
 def welcome_text():
+    surf_icon = surfshark_emoji_html()
     return (
         "👑✨ *SIDD SAGA BOT* ✨👑\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1327,13 +1334,14 @@ def welcome_text():
         "🛠 *Developer:* @AsimVirus\n\n"
         "💼 *Canva Business* — Instant team invite\n"
         "👑 *Canva Pro* — Manual activation\n"
-        "🦈 *Surfshark VPN* — Auto login via code\n"
+        f"{surf_icon} *Surfshark VPN* — Auto login via code\n"
         f'<tg-emoji emoji-id="{DUOLINGO_EMOJI_ID}">🔫</tg-emoji> *Duolingo* — Fresh account delivery\n\n'
         "🔗 *Refer friends* to earn free credits!\n"
         "👇 Choose an option below."
     )
 
 def join_required_text():
+    surf_icon = surfshark_emoji_html()
     return (
         "👑✨ *SIDD SAGA BOT* ✨👑\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -1342,7 +1350,7 @@ def join_required_text():
         "🔒 Join our channel to unlock the bot.\n\n"
         "✅ Free Canva Business access\n"
         "✅ Private Canva Pro upgrades\n"
-        "✅ Surfshark VPN codes\n"
+        f"✅ {surf_icon} Surfshark VPN codes\n"
         f'✅ <tg-emoji emoji-id="{DUOLINGO_EMOJI_ID}">🔫</tg-emoji> Duolingo accounts\n'
         "✅ Fast support & updates\n\n"
         "👇 Tap below, join, then come back!"
@@ -1501,17 +1509,19 @@ def callback_main_menu(call):
                          parse_mode="Markdown", reply_markup=main_menu(user_id))
 
     elif action == "menu_buy":
+        surf_icon = surfshark_emoji_html()
         bot.send_message(chat_id,
             "🛒 *Premium Deals & Panels*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "💎 Want your own *Canva Business admin panel* or a private *Canva Pro* account?\n\n"
-            "🦈 Want a *Surfshark VPN* subscription?\n\n"
+            f"{surf_icon} Want a *Surfshark VPN* subscription?\n\n"
             "💬 *Contact:* @siddheshsaga\\_bot\n"
             "⚡ Fast setup · Clean pricing · Direct support.",
             parse_mode="Markdown"
         )
 
     elif action == "menu_account":
+        surf_icon = surfshark_emoji_html()
         credits = "∞" if is_admin(user_id) else user['credits']
         surfshark_credits = "∞" if is_admin(user_id) else user['surfshark_credits']
         username = f"@{user['username']}" if user['username'] else "Not set"
@@ -1522,13 +1532,14 @@ def callback_main_menu(call):
             f"🆔 *ID:* `{user['user_id']}`\n"
             f"👨‍💻 *Username:* {username}\n"
             f"🪙 *Canva Credits:* `{credits}`\n"
-            f"🦈 *Surfshark Credits:* `{surfshark_credits}`\n"
+            f"{surf_icon} *Surfshark Credits:* `{surfshark_credits}`\n"
             f"👥 *Referrals:* `{user['referrals']}`"
             f"{admin_badge}",
             parse_mode="Markdown"
         )
 
     elif action == "menu_refer":
+        surf_icon = surfshark_emoji_html()
         bot_info = bot.get_me()
         ref_link = f"https://t.me/{bot_info.username}?start={user_id}"
         bot.send_message(chat_id,
@@ -1537,7 +1548,7 @@ def callback_main_menu(call):
             "👥 Invite friends and collect free credits!\n\n"
             "🎁 *Reward per referral:*\n"
             "  🪙 `1` Canva credit\n"
-            "  🦈 `1` Surfshark login credit\n\n"
+            f"  {surf_icon} `1` Surfshark login credit\n\n"
             f"📊 *Your Referrals:* `{user['referrals']}`\n\n"
             f"🔗 *Your Invite Link:*\n`{ref_link}`",
             parse_mode="Markdown"
@@ -1556,9 +1567,10 @@ def callback_main_menu(call):
         )
 
     elif action == "menu_surfshark":
+        surf_icon = surfshark_emoji_html()
         user_credits = "∞" if is_admin(user_id) else (user['surfshark_credits'] if user else 0)
         bot.send_message(chat_id,
-            "🦈 *Surfshark Quick Login*\n"
+            f"{surf_icon} *Surfshark Quick Login*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "🔑 Send your *6-character Surfshark login code* in chat.\n\n"
             "💡 How to get your code:\n"
@@ -1567,7 +1579,7 @@ def callback_main_menu(call):
             "  3. Copy the 6-digit code\n"
             "  4. Send it here!\n\n"
             f"🪙 *Cost:* `{SURFSHARK_CREDIT_COST}` Surfshark credits\n"
-            f"🦈 *Your Surfshark Credits:* `{user_credits}`\n"
+            f"{surf_icon} *Your Surfshark Credits:* `{user_credits}`\n"
             "🔗 Need more? Invite friends with your referral link!",
             parse_mode="Markdown"
         )
@@ -1701,14 +1713,14 @@ def handle_text(message):
     known_commands = [
         "🔙 Back to Main", "🛒 Buy Premium / Panel", "👤 My Account",
         "🔗 Refer & Earn", "📞 Support", "💼 Canva Business", "👑 Canva Pro",
-        "Surfshark Login", "🦈 Surfshark Login", "🏄‍♀️ Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo",
+        "Surfshark Login", "❤️ Surfshark Login", "🦈 Surfshark Login", "🏄‍♀️ Surfshark Login", "Duolingo", "🔫 Duolingo", "🦉 Duolingo",
         "➕ Add Link", "📋 View Links",
         "📢 Broadcast", "📊 Statistics",
         "💰 Give Credits", "🗑 Delete Link", "👤 User Info", "🎁 Global Gift",
         "🛠 Maintenance", "⚙️ Admin Panel", "✉️ Message User",
         "📂 Backup DB", "🔰 Leaderboard", "🏆 Leaderboard",
         # New admin features
-        "🦈 Give Surf Credits", "🎯 Set Credits", "👥 All Users",
+        "❤️ Give Surf Credits", "🦈 Give Surf Credits", "🎯 Set Credits", "👥 All Users",
         "🚫 Ban User", "✅ Unban User", "📋 Banned List",
         "👑 Pro Requests", "🔄 Reset User",
         "🦈 Surf Global Gift", "📤 Export Users", "🍪 Update Cookies",
@@ -1761,18 +1773,20 @@ def handle_text(message):
 
     # ── User Commands ──────────────────────────────────────────────
     if text == "🛒 Buy Premium / Panel":
+        surf_icon = surfshark_emoji_html()
         bot.send_message(
             message.chat.id,
             "🛒 *Premium Deals & Panels*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "💎 Want your own *Canva Business admin panel* or a private *Canva Pro* account?\n\n"
-            "🦈 Want a *Surfshark VPN* subscription?\n\n"
+            f"{surf_icon} Want a *Surfshark VPN* subscription?\n\n"
             "💬 *Contact:* @siddheshsaga\\_bot\n"
             "⚡ Fast setup · Clean pricing · Direct support.",
             parse_mode="Markdown"
         )
 
     elif text == "👤 My Account":
+        surf_icon = surfshark_emoji_html()
         credits = "∞" if is_admin(user_id) else user['credits']
         surfshark_credits = "∞" if is_admin(user_id) else user['surfshark_credits']
         username = f"@{user['username']}" if user['username'] else "Not set"
@@ -1784,13 +1798,14 @@ def handle_text(message):
             f"🆔 *ID:* `{user['user_id']}`\n"
             f"👨‍💻 *Username:* {username}\n"
             f"🪙 *Canva Credits:* `{credits}`\n"
-            f"🦈 *Surfshark Credits:* `{surfshark_credits}`\n"
+            f"{surf_icon} *Surfshark Credits:* `{surfshark_credits}`\n"
             f"👥 *Referrals:* `{user['referrals']}`"
             f"{admin_badge}",
             parse_mode="Markdown"
         )
 
     elif text == "🔗 Refer & Earn":
+        surf_icon = surfshark_emoji_html()
         bot_info = bot.get_me()
         ref_link = f"https://t.me/{bot_info.username}?start={user_id}"
         bot.send_message(
@@ -1800,7 +1815,7 @@ def handle_text(message):
             "👥 Invite friends and collect free credits!\n\n"
             "🎁 *Reward per referral:*\n"
             "  🪙 `1` Canva credit\n"
-            "  🦈 `1` Surfshark login credit\n\n"
+            f"  {surf_icon} `1` Surfshark login credit\n\n"
             f"📊 *Your Referrals:* `{user['referrals']}`\n\n"
             f"🔗 *Your Invite Link:*\n`{ref_link}`",
             parse_mode="Markdown"
@@ -1819,11 +1834,12 @@ def handle_text(message):
             parse_mode="Markdown"
         )
 
-    elif text in ["Surfshark Login", "🦈 Surfshark Login", "🏄 Surfshark Login", "🏄‍♀️ Surfshark Login"]:
+    elif text in ["Surfshark Login", "❤️ Surfshark Login", "🦈 Surfshark Login", "🏄 Surfshark Login", "🏄‍♀️ Surfshark Login"]:
+        surf_icon = surfshark_emoji_html()
         user_credits = "∞" if is_admin(user_id) else (user['surfshark_credits'] if user else 0)
         bot.send_message(
             message.chat.id,
-            "🦈 *Surfshark Quick Login*\n"
+            f"{surf_icon} *Surfshark Quick Login*\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
             "🔑 Send your *6-character Surfshark login code.*\n\n"
             "💡 How to get your code:\n"
@@ -1832,7 +1848,7 @@ def handle_text(message):
             "  3. Copy the 6-digit code\n"
             "  4. Send it here!\n\n"
             f"🪙 *Cost:* `{SURFSHARK_CREDIT_COST}` Surfshark credits\n"
-            f"🦈 *Your Surfshark Credits:* `{user_credits}`\n"
+            f"{surf_icon} *Your Surfshark Credits:* `{user_credits}`\n"
             "🔗 Need more? Invite friends with your referral link!"
         )
 
@@ -2089,10 +2105,11 @@ def handle_text(message):
             bot.register_next_step_handler(msg, process_admin_message)
 
         # ── NEW: Give Surfshark Credits ─────────────────────────
-        elif text == "🦈 Give Surf Credits":
+        elif text in ["❤️ Give Surf Credits", "🦈 Give Surf Credits", "Give Surf Credits"]:
+            surf_icon = surfshark_emoji_html()
             msg = bot.send_message(
                 message.chat.id,
-                "🦈 *Give Surfshark Credits*\n"
+                f"{surf_icon} *Give Surfshark Credits*\n"
                 "━━━━━━━━━━━━━━━━━━━━\n\n"
                 "📝 Format: `USER_ID AMOUNT`\n"
                 "Example: `123456789 3`",
@@ -2206,7 +2223,7 @@ def handle_text(message):
             bot.register_next_step_handler(msg, process_reset_user)
 
         # ── NEW: Surf Global Gift ──────────────────────────────
-        elif text == "🦈 Surf Global Gift":
+        elif text in ["🦈 Surf Global Gift", "Surf Global Gift"]:
             msg = bot.send_message(
                 message.chat.id,
                 "🦈 *Surfshark Global Gift*\n"
