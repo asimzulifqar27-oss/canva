@@ -37,6 +37,8 @@ SURFSHARK_CODE_RE = re.compile(r"^([A-Za-z0-9]{6})$")
 SURFSHARK_EMOJI_ID = "5879507561878654934"
 SURFSHARK_HEADLESS = os.getenv("SURFSHARK_HEADLESS", "false").lower() in {"1", "true", "yes", "on"}
 SURFSHARK_CDP_URL = os.getenv("SURFSHARK_CDP_URL", "http://127.0.0.1:9224")
+SURFSHARK_BROWSER_CHANNEL = os.getenv("SURFSHARK_BROWSER_CHANNEL", "chrome").strip()
+SURFSHARK_BLOCK_HEAVY_ASSETS = os.getenv("SURFSHARK_BLOCK_HEAVY_ASSETS", "false").lower() in {"1", "true", "yes", "on"}
 DUOLINGO_EMOJI_ID = "5796371348808799072"
 surfshark_lock = threading.Lock()
 surfshark_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="surfshark-playwright")
@@ -544,6 +546,37 @@ def block_heavy_surfshark_assets(route):
     else:
         route.continue_()
 
+def maybe_route_surfshark_context(context):
+    if not SURFSHARK_BLOCK_HEAVY_ASSETS:
+        return
+    try:
+        context.route("**/*", block_heavy_surfshark_assets)
+    except Exception:
+        pass
+
+def launch_surfshark_browser():
+    launch_kwargs = {
+        "headless": SURFSHARK_HEADLESS,
+        "args": [
+            "--disable-background-networking",
+            "--disable-dev-shm-usage",
+            "--disable-extensions",
+            "--disable-sync",
+            "--no-first-run",
+            "--disable-blink-features=AutomationControlled",
+        ],
+    }
+    if SURFSHARK_BROWSER_CHANNEL:
+        launch_kwargs["channel"] = SURFSHARK_BROWSER_CHANNEL
+    try:
+        return surfshark_playwright.chromium.launch(**launch_kwargs)
+    except Exception as e:
+        if not SURFSHARK_BROWSER_CHANNEL:
+            raise
+        print(f"[*] Could not launch Surfshark with channel '{SURFSHARK_BROWSER_CHANNEL}': {e}")
+        launch_kwargs.pop("channel", None)
+        return surfshark_playwright.chromium.launch(**launch_kwargs)
+
 def get_surfshark_context():
     global surfshark_playwright, surfshark_browser, surfshark_context
     if surfshark_context is not None:
@@ -555,7 +588,7 @@ def get_surfshark_context():
             surfshark_context = surfshark_browser.contexts[0]
         else:
             surfshark_context = surfshark_browser.new_context()
-        surfshark_context.route("**/*", block_heavy_surfshark_assets)
+        maybe_route_surfshark_context(surfshark_context)
         print(f"[+] Connected to Surfshark Chrome instance over CDP: {SURFSHARK_CDP_URL}")
         return surfshark_context
     except Exception as cdp_err:
@@ -563,15 +596,10 @@ def get_surfshark_context():
 
     if not Path(SURFSHARK_STORAGE).exists():
         raise RuntimeError("storage_state.json not found. Start Chrome on the Surfshark CDP port or run login.py first.")
-    surfshark_browser = surfshark_playwright.chromium.launch(
-        headless=SURFSHARK_HEADLESS,
-        args=["--disable-background-networking", "--disable-dev-shm-usage",
-              "--disable-extensions", "--disable-sync", "--no-first-run",
-              "--disable-blink-features=AutomationControlled"],
-    )
+    surfshark_browser = launch_surfshark_browser()
     surfshark_context = surfshark_browser.new_context(storage_state=SURFSHARK_STORAGE)
     surfshark_context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    surfshark_context.route("**/*", block_heavy_surfshark_assets)
+    maybe_route_surfshark_context(surfshark_context)
     return surfshark_context
 
 def _close_surfshark_browser_sync():
@@ -1166,12 +1194,7 @@ def _submit_surfshark_code_sync(code):
                 print(f"[+] Connected to Surfshark Chrome instance over CDP: {SURFSHARK_CDP_URL}")
             except Exception as cdp_err:
                 print(f"[*] Surfshark CDP connection failed ({SURFSHARK_CDP_URL}): {cdp_err}")
-                surfshark_browser = surfshark_playwright.chromium.launch(
-                    headless=SURFSHARK_HEADLESS,
-                    args=["--disable-background-networking", "--disable-dev-shm-usage",
-                          "--disable-extensions", "--disable-sync", "--no-first-run",
-                          "--disable-blink-features=AutomationControlled"],
-                )
+                surfshark_browser = launch_surfshark_browser()
 
         if getattr(surfshark_browser, "contexts", None):
             context = surfshark_browser.contexts[0]
@@ -1187,7 +1210,7 @@ def _submit_surfshark_code_sync(code):
             context = surfshark_browser.new_context(storage_state=storage_state)
             surfshark_context = context
             context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        context.route("**/*", block_heavy_surfshark_assets)
+        maybe_route_surfshark_context(context)
         timings["browser"] = time.monotonic() - started
 
         page = _get_surfshark_page_sync()
