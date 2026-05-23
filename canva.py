@@ -33,6 +33,7 @@ DUOLINGO_LEGACY_ACCOUNTS_PATH = os.path.join(BASE_DIR, "account.txt")
 SURFSHARK_STORAGE = os.getenv("SURFSHARK_STORAGE_STATE", os.path.join(BASE_DIR, "storage_state.json"))
 SURFSHARK_CODE_URL = os.getenv("SURFSHARK_CODE_URL", "https://my.surfshark.com/account/login-code")
 SURFSHARK_CODE_RE = re.compile(r"^([A-Za-z0-9]{6})$")
+SURFSHARK_EMOJI_ID = "5879507561878654934"
 DUOLINGO_EMOJI_ID = "5796371348808799072"
 surfshark_lock = threading.Lock()
 surfshark_playwright = None
@@ -78,9 +79,21 @@ def premium_emoji_html(text):
     for index, part in enumerate(parts):
         if not part or HTML_PROTECTED_RE.fullmatch(part):
             continue
-        for emoji, emoji_id in PREMIUM_EMOJI_ITEMS:
-            part = part.replace(emoji, f'<tg-emoji emoji-id="{emoji_id}">{emoji}</tg-emoji>')
-        parts[index] = part
+        converted = []
+        cursor = 0
+        while cursor < len(part):
+            matched = False
+            for emoji, emoji_id in PREMIUM_EMOJI_ITEMS:
+                if part.startswith(emoji, cursor):
+                    fallback_emoji = "❤️" if str(emoji_id) == SURFSHARK_EMOJI_ID else emoji
+                    converted.append(f'<tg-emoji emoji-id="{emoji_id}">{fallback_emoji}</tg-emoji>')
+                    cursor += len(emoji)
+                    matched = True
+                    break
+            if not matched:
+                converted.append(part[cursor])
+                cursor += 1
+        parts[index] = "".join(converted)
     return "".join(parts)
 
 def format_html(text):
@@ -597,6 +610,9 @@ def refund_credit(user_id, column="credits"):
             update_credits(user_id, 1)
         elif column == "surfshark_credits":
             update_surfshark_credits(user_id, 1)
+
+def surfshark_emoji_html():
+    return f'<tg-emoji emoji-id="{SURFSHARK_EMOJI_ID}">❤️</tg-emoji>'
 
 def count_duolingo_accounts(path=None):
     target = path or DUOLINGO_ACCOUNTS_PATH
@@ -1244,7 +1260,7 @@ def main_menu(user_id=None):
     else:
         markup.row(KeyboardButton("💼 Canva Business"))
     markup.row(
-        KeyboardButton("🦈 Surfshark Login"),
+        KeyboardButton("Surfshark Login", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
         KeyboardButton("Duolingo", icon_custom_emoji_id=DUOLINGO_EMOJI_ID)
     )
     markup.row(KeyboardButton("👤 My Account"), KeyboardButton("🔗 Refer & Earn"))
@@ -1260,7 +1276,11 @@ def admin_menu():
     # Row 2: Broadcast & Stats
     markup.row(KeyboardButton("📢 Broadcast"), KeyboardButton("📊 Statistics"), KeyboardButton("🔰 Leaderboard"))
     # Row 3: Credits gifting
-    markup.row(KeyboardButton("💰 Give Credits"), KeyboardButton("🦈 Give Surf Credits"), KeyboardButton("🎯 Set Credits"))
+    markup.row(
+        KeyboardButton("💰 Give Credits"),
+        KeyboardButton("Give Surf Credits", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
+        KeyboardButton("🎯 Set Credits")
+    )
     # Row 4: Users search & details
     markup.row(KeyboardButton("👤 User Info"), KeyboardButton("👥 All Users"), KeyboardButton("🎁 Global Gift"))
     # Row 5: Ban system
@@ -1270,7 +1290,11 @@ def admin_menu():
     # Row 7: Settings & Maintenance
     markup.row(KeyboardButton("🛠 Maintenance"), KeyboardButton("📂 Backup DB"))
     # Row 8: Surfshark & Exports
-    markup.row(KeyboardButton("🦈 Surf Global Gift"), KeyboardButton("📤 Export Users"), KeyboardButton("🍪 Update Cookies"))
+    markup.row(
+        KeyboardButton("Surf Global Gift", icon_custom_emoji_id=SURFSHARK_EMOJI_ID),
+        KeyboardButton("📤 Export Users"),
+        KeyboardButton("🍪 Update Cookies")
+    )
     # Row 9: Surfshark Cookies Pool
     markup.row(KeyboardButton("➕ Add Surf Cookie"), KeyboardButton("📋 View Surf Cookies"), KeyboardButton("🗑 Delete Surf Cookie"))
     # Row 10: Duolingo Stock
