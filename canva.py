@@ -35,12 +35,15 @@ SURFSHARK_STORAGE = os.getenv("SURFSHARK_STORAGE_STATE", os.path.join(BASE_DIR, 
 SURFSHARK_CODE_URL = os.getenv("SURFSHARK_CODE_URL", "https://my.surfshark.com/account/login-code")
 SURFSHARK_CODE_RE = re.compile(r"^([A-Za-z0-9]{6})$")
 SURFSHARK_EMOJI_ID = "5879507561878654934"
+SURFSHARK_HEADLESS = os.getenv("SURFSHARK_HEADLESS", "false").lower() in {"1", "true", "yes", "on"}
+SURFSHARK_CDP_URL = os.getenv("SURFSHARK_CDP_URL", "http://127.0.0.1:9224")
 DUOLINGO_EMOJI_ID = "5796371348808799072"
 surfshark_lock = threading.Lock()
 surfshark_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="surfshark-playwright")
 surfshark_playwright = None
 surfshark_browser = None
 surfshark_context = None
+surfshark_page = None
 
 # ── Canva Auto-Invite Config ─────────────────────────────────────
 import json
@@ -543,28 +546,43 @@ def block_heavy_surfshark_assets(route):
 
 def get_surfshark_context():
     global surfshark_playwright, surfshark_browser, surfshark_context
-    if not Path(SURFSHARK_STORAGE).exists():
-        raise RuntimeError("storage_state.json not found. Run login.py first.")
     if surfshark_context is not None:
         return surfshark_context
     surfshark_playwright = sync_playwright().start()
+    try:
+        surfshark_browser = surfshark_playwright.chromium.connect_over_cdp(SURFSHARK_CDP_URL)
+        if surfshark_browser.contexts:
+            surfshark_context = surfshark_browser.contexts[0]
+        else:
+            surfshark_context = surfshark_browser.new_context()
+        surfshark_context.route("**/*", block_heavy_surfshark_assets)
+        print(f"[+] Connected to Surfshark Chrome instance over CDP: {SURFSHARK_CDP_URL}")
+        return surfshark_context
+    except Exception as cdp_err:
+        print(f"[*] Surfshark CDP connection failed ({SURFSHARK_CDP_URL}): {cdp_err}")
+
+    if not Path(SURFSHARK_STORAGE).exists():
+        raise RuntimeError("storage_state.json not found. Start Chrome on the Surfshark CDP port or run login.py first.")
     surfshark_browser = surfshark_playwright.chromium.launch(
-        headless=True,
+        headless=SURFSHARK_HEADLESS,
         args=["--disable-background-networking", "--disable-dev-shm-usage",
-              "--disable-extensions", "--disable-sync", "--no-first-run"],
+              "--disable-extensions", "--disable-sync", "--no-first-run",
+              "--disable-blink-features=AutomationControlled"],
     )
     surfshark_context = surfshark_browser.new_context(storage_state=SURFSHARK_STORAGE)
+    surfshark_context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     surfshark_context.route("**/*", block_heavy_surfshark_assets)
     return surfshark_context
 
 def _close_surfshark_browser_sync():
-    global surfshark_playwright, surfshark_browser, surfshark_context
+    global surfshark_playwright, surfshark_browser, surfshark_context, surfshark_page
     for obj in (surfshark_context, surfshark_browser, surfshark_playwright):
         if obj:
             try:
                 obj.close() if hasattr(obj, "close") else obj.stop()
             except Exception:
                 pass
+    surfshark_page = None
     surfshark_context = surfshark_browser = surfshark_playwright = None
 
 def close_surfshark_browser():
@@ -1089,7 +1107,15 @@ def get_surfshark_storage_state():
             pass
     raise RuntimeError("No active Surfshark cookies in DB and storage_state.json not found.")
 
+def surfshark_security_check_text():
+    return (
+        "🔒 <b>Surfshark security check blocked the login.</b>\n\n"
+        "Surfshark showed a Cloudflare/Turnstile verification page instead of the login-code form.\n\n"
+        "An admin needs to add a fresh Surfshark cookie or refresh the logged-in browser session."
+    )
+
 def _submit_surfshark_code_sync(code):
+    global surfshark_context, surfshark_page
     timings = {}
     started = time.monotonic()
     with surfshark_lock:
@@ -1105,17 +1131,50 @@ def _submit_surfshark_code_sync(code):
         if surfshark_playwright is None:
             surfshark_playwright = sync_playwright().start()
         if surfshark_browser is None:
-            surfshark_browser = surfshark_playwright.chromium.launch(
-                headless=True,
-                args=["--disable-background-networking", "--disable-dev-shm-usage",
-                      "--disable-extensions", "--disable-sync", "--no-first-run"],
-            )
+            try:
+                surfshark_browser = surfshark_playwright.chromium.connect_over_cdp(SURFSHARK_CDP_URL)
+                print(f"[+] Connected to Surfshark Chrome instance over CDP: {SURFSHARK_CDP_URL}")
+            except Exception as cdp_err:
+                print(f"[*] Surfshark CDP connection failed ({SURFSHARK_CDP_URL}): {cdp_err}")
+                surfshark_browser = surfshark_playwright.chromium.launch(
+                    headless=SURFSHARK_HEADLESS,
+                    args=["--disable-background-networking", "--disable-dev-shm-usage",
+                          "--disable-extensions", "--disable-sync", "--no-first-run",
+                          "--disable-blink-features=AutomationControlled"],
+                )
 
-        context = surfshark_browser.new_context(storage_state=storage_state)
+        close_context = True
+        if getattr(surfshark_browser, "contexts", None):
+            context = surfshark_browser.contexts[0]
+            surfshark_context = context
+            close_context = False
+            if storage_state and storage_state.get("cookies"):
+                try:
+                    context.add_cookies(storage_state["cookies"])
+                except Exception as cookie_err:
+                    print(f"[*] Warning: Could not add Surfshark cookies to CDP context: {cookie_err}")
+        elif surfshark_context is not None:
+            context = surfshark_context
+            close_context = False
+        else:
+            context = surfshark_browser.new_context(storage_state=storage_state)
+            surfshark_context = context
+            close_context = False
+            context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         context.route("**/*", block_heavy_surfshark_assets)
         timings["browser"] = time.monotonic() - started
 
-        page = context.new_page()
+        page = surfshark_page
+        if page is not None:
+            try:
+                if page.is_closed():
+                    page = None
+            except Exception:
+                page = None
+        if page is None:
+            page = context.new_page()
+            surfshark_page = page
+        keep_page_open = False
         try:
             step_started = time.monotonic()
             page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=15000)
@@ -1127,11 +1186,21 @@ def _submit_surfshark_code_sync(code):
                     "🔒 <b>Session expired on the server.</b>\n"
                     "An admin needs to add a fresh cookie."
                 ), timings
-            inputs = page.locator('input[type="tel"], input[inputmode="numeric"], input[maxlength="1"]')
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=5000)
+            except Exception:
+                pass
+            if page.locator('input[name="cf-turnstile-response"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare"]').count() > 0:
+                timings["page"] = time.monotonic() - step_started
+                if cookie_id:
+                    mark_cookie_expired(cookie_id)
+                return False, surfshark_security_check_text(), timings
+
+            inputs = page.locator('input[type="tel"]:visible, input[inputmode="numeric"]:visible, input[maxlength="1"]:visible')
             try:
                 inputs.first.wait_for(state="visible", timeout=8000)
             except Exception:
-                page.locator("input").first.wait_for(state="visible", timeout=3000)
+                page.locator('input:not([type="hidden"]):visible').first.wait_for(state="visible", timeout=3000)
             timings["page"] = time.monotonic() - step_started
             step_started = time.monotonic()
             if inputs.count() >= 6:
@@ -1153,6 +1222,11 @@ def _submit_surfshark_code_sync(code):
             while time.monotonic() < deadline:
                 if "login-code/success" in page.url or "login-code" not in page.url:
                     timings["confirm"] = time.monotonic() - step_started
+                    keep_page_open = True
+                    try:
+                        page.goto(SURFSHARK_CODE_URL, wait_until="commit", timeout=8000)
+                    except Exception:
+                        pass
                     return True, (
                         "🎉 <b>You're signed in!</b>\n\n"
                         "🦈 Open the Surfshark app now.\n"
@@ -1181,12 +1255,16 @@ def _submit_surfshark_code_sync(code):
                 f"<code>{short_error(e)}</code>"
             ), timings
         finally:
+            if not keep_page_open:
+                try:
+                    page.close()
+                except Exception:
+                    pass
+                if surfshark_page is page:
+                    surfshark_page = None
             try:
-                page.close()
-            except Exception:
-                pass
-            try:
-                context.close()
+                if close_context:
+                    context.close()
             except Exception:
                 pass
 
@@ -1194,6 +1272,20 @@ def submit_surfshark_code(code):
     if threading.current_thread().name.startswith("surfshark-playwright"):
         return _submit_surfshark_code_sync(code)
     return surfshark_executor.submit(_submit_surfshark_code_sync, code).result()
+
+def should_refund_surfshark_failure(reply):
+    text = str(reply or "").lower()
+    return any(
+        marker in text
+        for marker in (
+            "no active surfshark session",
+            "session expired",
+            "security check blocked",
+            "turnstile",
+            "cloudflare",
+            "something went wrong inside the surfshark login helper",
+        )
+    )
 
 def handle_surfshark_code(message, raw_text):
     cleaned = raw_text.strip()
@@ -1255,6 +1347,8 @@ def handle_surfshark_code(message, raw_text):
             "💥 <b>Something went wrong inside the Surfshark login helper.</b>\n\n"
             f"<code>{short_error(e)}</code>"
         )
+    if not ok and should_refund_surfshark_failure(reply):
+        update_surfshark_credits(message.from_user.id, SURFSHARK_CREDIT_COST)
     elapsed = time.monotonic() - started_at
     header = "✅ <b>Success!</b>\n\n" if ok else "❌ <b>Could not sign in</b>\n\n"
     timing_text = (
@@ -1263,6 +1357,8 @@ def handle_surfshark_code(message, raw_text):
         f"Click {timings.get('click', 0):.1f}s · Confirm {timings.get('confirm', 0):.1f}s</i>"
     )
     result_text = header + reply + timing_text
+    if not ok and should_refund_surfshark_failure(reply) and not is_admin(message.from_user.id):
+        result_text += f"\n\n🪙 <i>{SURFSHARK_CREDIT_COST} Surfshark credits refunded.</i>"
     if len(result_text) > 3500:
         result_text = result_text[:3500] + "\n\n<i>Message trimmed.</i>"
     try:
